@@ -1,0 +1,54 @@
+public class JSONSiteVisitFromVSM{
+    
+    // Customer details
+    public string PeopleID;
+    public string InvitationID;
+    public string FirstName;
+    public string LastName;
+    public string DialingCode;
+    public string DialingCountry;
+    public string Mobile;
+    public string AlternateDialingCode;
+    public string AlternateDialingCountry;     
+    public string AlternateMobile;
+    public string Email;
+    public string AlternateEmail;
+    public string Address;
+    public string DateOfBirth;
+    public string Gender;
+    public string Nationality;
+    
+    // Professional Details
+    
+    public string Occupation;
+    public string CompanyOrBusinessName;
+    public string Designation;
+    
+    //Project details 
+    public string Project;
+    public string ProjectVisited;
+    public string DateOfVisit;
+    public string VisitType;
+    public string VisitingOnBehalf;
+    public string SiteVisitStatus; 
+   
+    //Source details 
+    public string WalkinSource;
+    public string SubSource;
+    public string PartnerId;
+    public string UnregisteredPartnerName;    
+    public string CustomerName;
+    public string EmployeeName; 
+  
+    // Preferences
+    public string BudgetInCrores;
+    public string PurposeOfPurchase;
+    public string ProjectType;
+    public string UnitTypeConfiguration;
+    public string PossessionRequirement;
+    public string AttendedBySM;
+    
+    public static JSONSiteVisitFromVSM parse(String json) {
+        return (JSONSiteVisitFromVSM) System.JSON.deserialize(json, JSONSiteVisitFromVSM.class);
+    }
+}
