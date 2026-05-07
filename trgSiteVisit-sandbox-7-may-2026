@@ -1,0 +1,80 @@
+trigger trgSiteVisit on Customer_Registration__c (after insert,after update) {
+
+ if(Trigger.IsAfter && Trigger.IsInsert){
+      system.debug('In After Insert Trigger ::');
+      Set<Id> svSetId = new Set<Id>();
+     for(Customer_Registration__c cr : trigger.new){      
+       if(cr.SV_Status__c != '' && cr.SV_Status__c == 'Scheduled')
+         svSetId.add(cr.id);      
+    }
+    
+    if(!svSetId.IsEmpty())
+   //VMS_InvitationIntegration.SvDetails(svSetId);
+   VMS_InvitationIntegrationNew.SvDetails(svSetId);
+  
+
+}
+    
+    if(Trigger.IsAfter && Trigger.IsInsert){
+        Set<Id> svSetId = new Set<Id>();
+        for(Customer_Registration__c cr : trigger.new){      
+            if(cr.opportunity__c != null)
+                svSetId.add(cr.Id);      
+        }
+        if (!checkRecursion.siteVisitTriggerFired && svSetId != null) {
+            checkRecursion.siteVisitTriggerFired = true;
+            System.enqueueJob(new LaunchCustReEnqBatchQueueable(svSetId, 'Site Visit Created'));
+        }
+    }
+
+if(Trigger.IsUpdate && Trigger.IsAfter){
+    system.debug('In After update Trigger ::');
+     Set<Id> svSetId2 = new Set<Id>();
+     Set<Id> svSetId3 = new Set<Id>();
+     Set<Id> oppIdsToCheck = new Set<Id>();
+     Set<Id> oppIds = new Set<Id>();
+    
+     for(Customer_Registration__c cr : trigger.new){  
+       Customer_Registration__c oldCr = Trigger.oldMap.get(cr.Id);
+     
+        system.debug('Trigger.oldMap.get(cr.Id).SV_Status__c' + Trigger.oldMap.get(cr.Id).SV_Status__c );
+       if(cr.SV_Status__c != '' &&  cr.SV_Status__c == 'Rescheduled' && Trigger.oldMap.get(cr.Id).SV_Scheduled_Date_Time__c != cr.SV_Scheduled_Date_Time__c){
+           system.debug('In After update Trigger for rescheduled ::');
+           svSetId2.add(cr.id);  
+         }   
+       if(Trigger.oldMap.get(cr.Id).SV_Status__c != 'Cancelled' && cr.SV_Status__c != '' && cr.SV_Status__c == 'Cancelled' ){
+           system.debug('In After update Trigger for cancelled::');
+         svSetId3.add(cr.id);     
+       }  
+         // ✅ New logic: Attended_By_SM__c changed
+        if (cr.Attended_By_SM__c != oldCr.Attended_By_SM__c && cr.Opportunity__c != null && cr.Attended_By_SM__c != null) {
+           system.debug('In After update Attended By SM::');
+            oppIdsToCheck.add(cr.Opportunity__c);
+        }
+        if (cr.Opportunity__c != null && cr.SV_Status__c != oldCr.SV_Status__c && cr.SV_Status__c != null) {
+            oppIds.add(cr.Opportunity__c);
+        }
+          
+    }
+    if(!svSetId2.IsEmpty())
+    
+    //VMS_InvitationIntegration.rescheduleSV(svSetId2);
+    VMS_InvitationIntegrationNew.rescheduleSV(svSetId2);
+    
+    if(!svSetId3.IsEmpty())
+    //VMS_InvitationIntegration.cancelSV(svSetId3);
+    VMS_InvitationIntegrationNew.cancelSV(svSetId3);
+    
+    if (!oppIdsToCheck.isEmpty()) {
+        SiteVisitHandler.updateOppOwnerIfFirstVisit(oppIdsToCheck);
+    }
+    if (!checkRecursion.siteVisitUpdateBatchQueued && oppIds != null) {
+            checkRecursion.siteVisitUpdateBatchQueued = true;
+           System.enqueueJob(new LaunchOppSiteVisitBatchQueueable(oppIds));
+    }
+  
+  }
+
+ 
+ 
+ }
