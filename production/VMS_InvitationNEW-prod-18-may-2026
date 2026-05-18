@@ -1,0 +1,614 @@
+//TestVMS_InvitationIntegrationNew
+public class VMS_InvitationIntegrationNew {
+    
+    
+    public static Integer endMinutes = Integer.valueOf(End_Time_for_Event__c.getvalues('End Time Minutes').End_Minutes__c);
+    private static final String LOGIN_URL = 'http://20.235.62.115/totaluat/api/MobicoOrgUsers/login';
+    private static final String INVITATION_URL = 'http://20.235.62.115/totaluat/api/VisitLeads/invitation';
+    
+    public class LoginResponse {
+        public String id;
+        public Integer ttl;
+        public String created;
+        public String userId;
+        public String locationId;
+    }
+    
+    public class LoginDetails {
+        public String accessToken;
+        public String locationId;
+    }
+    
+    public static LoginDetails login() {
+        Http http = new Http();
+        HttpRequest request = new HttpRequest();
+        request.setEndpoint(LOGIN_URL);
+        request.setMethod('POST');
+        request.setHeader('Content-Type', 'application/json');
+        
+        String requestBody = '{"username": "admin@mobicomodo.com", "password": "TotalA@#84", "source": "web"}';
+        request.setBody(requestBody);
+        
+        HttpResponse response = http.send(request);
+        
+        if (response.getStatusCode() == 200) {
+            LoginResponse loginResponse = (LoginResponse) JSON.deserialize(response.getBody(), LoginResponse.class);
+            System.debug('Access Token: ' + loginResponse.id);
+            System.debug('Location ID: ' + loginResponse.locationId);
+            
+            LoginDetails details = new LoginDetails();
+            details.accessToken = loginResponse.id;
+            details.locationId = loginResponse.locationId;
+            return details;
+        } else {
+            System.debug('Login Failed: ' + response.getBody());
+            return null;
+        }
+    }
+    
+    @future(callout=true)    
+    public static void SvDetails (Set<ID> SvID){
+        
+       LoginDetails loginDetails = login();
+        if (LoginDetails == null) {
+            
+        }
+        List<API_Log__c> loglist = new List<API_Log__c>();
+        
+        
+        string strFirst_name = ' ';
+        string strlast_name = ' ';
+        string strphone = ' ';
+        string strEmail =' ';
+        string strvalid_from =' ';
+        string strValid_upto = ' ';
+        string strSpace_id = ' ';
+        string strPeopleId = ' ';
+        Boolean dataError = false;
+        string errMsg = '';    
+        string strRequest = '';
+        string strResponse = '';
+        string vmsInvitationId = '';
+        string vmsPeopleId = '';
+        string endpointURL = '';
+        string vmsApiKey = '';
+        string leadSource = '';
+        string salesManager = '';
+        String taskType = '';
+        system.debug('Site Visit ::' + SvID);
+        if(SvID!= null && SvID.size() > 0){
+            system.debug('Inside if condition::' + SvID);
+            List <Customer_Registration__c> SvList = new List <Customer_Registration__c>();
+            SvList = [select id,Name,Opportunity__c,Opportunity__r.name,RecordTypeId,Opportunity__r.Account_Mobile_Number__c,People_Id__c,
+                      Opportunity__r.Account_Email__c,First_Name__c,Last_Name__c,project__c,project__r.Project_code__c,
+                      Project__r.Space_Id__c,Opportunity__r.Account.FirstName,Opportunity__r.Account.LastName,SV_Scheduled_End_Date_Time__c,SV_Scheduled_Date_Time__c, 
+                      Opportunity__r.LeadSource,Opportunity__r.Sales_Manager_lookup__r.Name ,Task_Type__c
+                      from Customer_Registration__c
+                      where Id IN : SvID];
+            List<Opportunity> oplist = new List<Opportunity>();  
+            List<Account> alist = new List<Account>();
+            String existingPeopleId = '';
+            
+            system.debug('SvList::' + SvList );
+            
+            if(SvList.size() > 0){
+                
+                SvList[0].SV_Scheduled_End_Date_Time__c = svList[0].SV_Scheduled_Date_Time__c.addMinutes(endMinutes);
+                
+                JSONGenerator gen = JSON.createGenerator(true);
+                gen.writeStartObject();
+                
+                strlast_name =SvList[0].Opportunity__r.Account.LastName;
+                system.debug('strlast_name ' + strlast_name );
+                
+                strFirst_name =SvList[0].Opportunity__r.Account.FirstName;  
+                system.debug('strFirst_name ' + strFirst_name );
+                
+                strphone = SvList[0].Opportunity__r.Account_Mobile_Number__c; 
+                system.debug('strphone ' + strphone );
+                
+                strEmail = SvList[0].Opportunity__r.Account_Email__c;
+                system.debug('strEmail ' + strEmail);
+                
+                leadSource = SvList[0].Opportunity__r.LeadSource;
+                salesManager = SvList[0].Opportunity__r.Sales_Manager_lookup__r.Name;
+                taskType = SvList[0].Task_Type__c;
+                
+                system.debug('taskType is '+taskType);
+                
+                
+                if(SvList[0].SV_Scheduled_Date_Time__c == null){
+                    dataError = true;
+                    errMsg += 'Schedued Start DateTime is Not Present';
+                }
+                else{
+                    strValid_from = SvList[0].SV_Scheduled_Date_Time__c.formatGMT('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
+                    system.debug('strValid_from' + strValid_from);
+                }
+                
+                if(SvList[0].SV_Scheduled_End_Date_Time__c == null){
+                    dataError = true;
+                    errMsg += 'Schedued End DateTime is Not Present';                   
+                }
+                else{
+                    strValid_upto = SvList[0].SV_Scheduled_End_Date_Time__c.formatGMT('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
+                    system.debug('strValid_upto ' + strValid_upto);
+                }
+                
+                if(SvList[0].Project__r.Space_Id__c == null)
+                {
+                    dataError = true;
+                    errMsg += 'Space_Id is Not Present'; 
+                } 
+                else{
+                    strSpace_id = SvList[0].project__r.Space_Id__c;
+                    system.debug('strSpace_id' + strSpace_id);
+                } 
+                VMS_API__c  inviteSetting = VMS_API__c.getInstance('VMS Invitation');
+                system.debug('inviteSetting ::'+inviteSetting );
+                if(String.IsBlank('inviteSetting')){               
+                    dataError = true;
+                    errMsg += 'Endpoint details is not present'; 
+                }
+                
+                else{
+                    endpointURL = inviteSetting.URL__c ;
+                    vmsApiKey = inviteSetting.VMS_API_Key__c;                  
+                    system.debug('endpointURL ::' + endpointURL );
+                    system.debug('vmsApiKey ::' + vmsApiKey );
+                    
+                }
+                
+                if(dataError)
+                {
+                    API_Log__c logObj = new API_Log__c();
+                    logObj.API_Name__c  = 'Create Invitation';
+                    logObj.Site_Visit__c = SvList[0].id;  
+                    logObj.Request__c = 'NA';
+                    logObj.Response__c = 'NA';
+                    logObj.Error_Reason__c = errMsg;
+                    logObj.Status__c =   'Not processed';  
+                    loglist.add(logObj);
+                }
+                else if(!dataError){    
+                    
+                    if(strFirst_name != null && strFirst_name != '')
+                        gen.writeStringField('first_name',strFirst_name);
+                    else
+                        gen.writeStringField('first_name',strLast_name);
+                    if(strLast_name != null && strLast_name != '')    
+                        gen.writeStringField('last_name',strLast_name);
+                    else
+                        gen.writeStringField('last_name','');
+                    if(strphone != null && strphone != '' )     
+                        gen.writeStringField('mobile_number',strphone);
+                    else
+                        gen.writeStringField('mobile_number','');
+                    if(strEmail != null && strEmail != '')    
+                        gen.writeStringField('email',strEmail);
+                    else     
+                        gen.writeStringField('email', '');
+                    if(strValid_from != null && strValid_from != '')   
+                        gen.writeStringField('valid_from',strValid_from);
+                    else 
+                        gen.writeStringField('valid_from','');
+                    if( strValid_upto != null && strValid_upto != '')    
+                        gen.writeStringField('valid_upto',strValid_upto);
+                    else 
+                        gen.writeStringField('valid_upto','');
+                    
+                    if( leadSource != null && leadSource != '')    
+                        gen.writeStringField('lead_source',leadSource);
+                    else 
+                        gen.writeStringField('lead_source','');
+                    if( salesManager != null && salesManager != '')    
+                        gen.writeStringField('sales_manager',salesManager);
+                    else 
+                        gen.writeStringField('sales_manager','');
+                    
+                    if(taskType != null && taskType != '')    
+                        gen.writeStringField('task_type', taskType);
+                    else 
+                        gen.writeStringField('task_type', ''); 
+                    
+                    gen.writeStringField('image_url','');
+                    gen.writeNumberField('space_id',Integer.valueOf(strSpace_id));  
+                    gen.writeStringField('site_visit_type','first-visit');
+                    
+                    gen.writeEndObject();
+                    
+                    Http httpProtocol = new Http();
+                    HttpRequest request = new HttpRequest();
+                    request.setEndpoint(INVITATION_URL);
+                    request.setMethod('POST');
+                    request.setHeader('Content-Type', 'application/json');
+                    request.setHeader('Accept', 'application/json');
+                    request.setHeader('Authorization', loginDetails.accessToken);
+                    request.setHeader('LocationId', loginDetails.locationId);
+                    request.setBody(gen.getAsString());
+                    system.debug('request body:' +gen.getAsString());
+                    system.debug('request:' +request);
+                    strRequest = gen.getAsString();
+                    // strRequest = request.setBody();
+                    string itemId = '';
+                    string peopleId = '';
+                    if(!Test.isRunningTest()){
+                        HttpResponse response = httpProtocol.send(request);
+                        System.debug('Response:' + response );
+                        System.debug('Response:' + response.getBody());
+                        strResponse = response.getBody();
+                   /*     strResponse =  strResponse.replaceAll('\n','<br/>');
+                        strResponse = strResponse.replaceAll('\t', '&nbsp;');
+                        strResponse = '[' + strResponse + ']'; */
+                        // Parse the response JSON
+                        Map<String, Object> responseMap = (Map<String, Object>) JSON.deserializeUntyped(response.getBody());
+                        
+                        if (responseMap.containsKey('data')) {
+                            
+                            system.debug('Inside the VMS invitation field update');
+                            
+                            Map<String, Object> dataMap = (Map<String, Object>) responseMap.get('data');
+                            
+                            if (dataMap.containsKey('item')) {
+                                
+                                system.debug('Inside the VMS invitation field update 2');
+                                
+                                Map<String, Object> itemMap = (Map<String, Object>) dataMap.get('item');
+                                
+                                // Extract first ID (from "item")
+                                itemId = String.valueOf(itemMap.get('id'));
+                                
+                                // Extract second ID (from "people")
+                                if (itemMap.containsKey('people')) {
+                                    
+                                    system.debug('Inside the VMS invitation field update 3');
+                                    
+                                    Map<String, Object> peopleMap = (Map<String, Object>) itemMap.get('people');
+                                    peopleId = String.valueOf(peopleMap.get('id'));
+                                    
+                                    // Debug log the extracted IDs
+                                    System.debug('Item ID: ' + itemId);
+                                    System.debug('People ID: ' + peopleId);
+                                }
+                            }
+                        }
+                    }
+                    
+                    try{
+                        SvList[0].VMS_Invitation_Id__c = itemId;
+                        SvList[0].People_Id__c= peopleId;
+                        oplist =  [Select id, name,accountId from opportunity where id =: SvList[0].Opportunity__c];
+                        if(oplist != null && oplist.size() > 0){     
+                            
+                            alist = [Select Id,People_Id__c from Account where id =:oplist[0].accountId ];
+                            if(alist != null && alist.size() >0){
+                                if(alist[0].People_Id__c == null || alist[0].People_Id__c == '')
+                                    alist[0].People_Id__c = peopleId;                           
+                            }
+                        }
+                        
+                        
+                        update alist;
+                        update SvList;
+                        
+                        API_Log__c logObj = new API_Log__c();
+                        logObj.API_Name__c = 'Create Invitation';
+                        logObj.Site_Visit__c = SvList[0].id;
+                        logObj.Request__c = strRequest;
+                        logObj.Response__c = strResponse ;
+                        logObj.Error_Reason__c = '';
+                        logObj.Status__c =   'Success';  
+                        loglist.add(logObj);
+                    }catch(exception ex){
+                        System.debug('Exception:' + ex.getMessage());                    
+                        errMsg  = ex.getMessage();
+                        
+                        API_Log__c logObj = new API_Log__c();
+                        logObj.API_Name__c = 'Create Invitation';
+                        logObj.Site_Visit__c = SvList[0].id;
+                        logObj.Request__c = strRequest;
+                        logObj.Response__c = strResponse ;
+                        logObj.Error_Reason__c = errMsg ;
+                        logObj.Status__c =   'Failure';  
+                        loglist.add(logObj);
+                        
+                    }       
+                }  
+                
+                else{
+                    
+                    system.debug('Someyhing went wrong');
+                    
+                }
+                
+                if(loglist != null && loglist.size() > 0)
+                    insert loglist;
+            }
+        }
+    }
+    
+    
+    public Static DateTime getUTCDateTime(DateTime dt){
+        Datetime GMTDate = Datetime.newInstance(
+            dt.year(),
+            dt.month(),
+            dt.day(),
+            dt.hour(),
+            dt.minute(),
+            dt.second());
+        system.debug('GMTDate ::'+GMTDate);
+        return GMTDate;
+        
+    }
+    
+    
+    /* The below method is used when ever the site visit is reschedule*/
+    @future(callout=true)
+    
+    public static void rescheduleSV(Set<ID> SvID){
+        system.debug('In Rescheduled site visit ::');
+        LoginDetails loginDetails = login();
+        List<API_Log__c> loglist = new List<API_Log__c>();
+        Boolean dataError = false;
+        string errMsg = '';    
+        string strvalid_from ='';
+        string strValid_upto = ''; 
+        string reschedule = '';
+        string fill_checkin_custom_data = '';
+        string fill_checkout_custom_data = '';
+        string space_id = '';
+        string resend_invite = '';
+        string site_visit_type = '';
+        string strInvitationId = ''; 
+        string strRequest = '';
+        string strResponse = '';
+        string endpointURL = '';
+        string vmsApiKey = '';
+        
+        system.debug('Site Visit ::' + SvID);
+        if(SvID!= null && SvID.size() > 0){
+            system.debug('Inside if condition::' + SvID);
+            List <Customer_Registration__c> SvList = new List <Customer_Registration__c>();
+            SvList = [select id,Name,Opportunity__c,Opportunity__r.name,RecordTypeId,Opportunity__r.Account_Mobile_Number__c,People_Id__c,
+                      Opportunity__r.Account_Email__c,First_Name__c,project__c,project__r.Project_code__c,project__r.Space_Id__c,
+                      SV_Scheduled_Date_Time__c,VMS_Invitation_Id__c,SV_Scheduled_End_Date_Time__c  from Customer_Registration__c
+                      where Id IN : SvID];
+            system.debug('SvList::' + SvList );
+            
+            if(SvList.size() > 0){
+                
+                If(SvList[0].VMS_Invitation_Id__c  != null && SvList[0].VMS_Invitation_Id__c  != ''){
+                    SvList[0].SV_Scheduled_End_Date_Time__c = svList[0].SV_Scheduled_Date_Time__c.addMinutes(endMinutes);
+                    
+                    strInvitationId = SvList[0].VMS_Invitation_Id__c;
+                    system.debug('strInvitationId ' + strInvitationId );
+                    
+                    reschedule = 'reschedule';
+                    fill_checkin_custom_data = 'false';
+                    fill_checkout_custom_data = 'false';
+                    resend_invite = 'true';
+                    space_id = SvList[0].project__r.Space_Id__c;
+                    site_visit_type = 're-visit';
+                    
+                    if(SvList[0].SV_Scheduled_Date_Time__c == null){
+                        dataError = true;
+                        errMsg = 'Scheduled Start DateTime is Blank';
+                    }
+                    else {                       
+                        strValid_from = (SvList[0].SV_Scheduled_Date_Time__c.formatGMT('yyyy-MM-dd\'T\'HH:mm:ss\'Z\''));
+                        system.debug('strValid_from' + strValid_from);                       
+                    }   
+                    if(SvList[0].SV_Scheduled_End_Date_Time__c == null){
+                        dataError = true;
+                        errMsg = 'Scheduled End DateTime is Blank';
+                    }
+                    else {
+                        strValid_upto = (SvList[0].SV_Scheduled_End_Date_Time__c.formatGMT('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'')); 
+                        system.debug('strValid_upto ' + strValid_upto);                     
+                    } 
+                    
+                    VMS_API__c  inviteSetting = VMS_API__c.getInstance('VMS Invitation');
+                    system.debug('inviteSetting ::'+inviteSetting );
+                    if(String.IsBlank('inviteSetting')){               
+                        dataError = true;
+                        errMsg += 'Endpoint details is not present'; 
+                    }
+                    
+                    else{
+                        endpointURL = inviteSetting.URL__c ;
+                        vmsApiKey = inviteSetting.VMS_API_Key__c;                  
+                        system.debug('endpointURL ::' + endpointURL );
+                        system.debug('vmsApiKey ::' + vmsApiKey );
+                        
+                    }
+                    
+                    if(dataError) {
+                        
+                        API_Log__c logObj = new API_Log__c();
+                        logObj.API_Name__c  = 'Update Invitation';
+                        logObj.Site_Visit__c = SvList[0].id;  
+                        logObj.Request__c = 'NA';
+                        logObj.Response__c = 'NA';
+                        logObj.Error_Reason__c = errMsg;
+                        logObj.Status__c =   'Not processed';  
+                        loglist.add(logObj);
+                        
+                    }
+                    else if(!dataError){
+                        JSONGenerator gen = JSON.createGenerator(true);
+                        gen.writeStartObject();
+                        gen.writeNumberField('invitation_id',Integer.valueof(strInvitationId));
+                        gen.writeStringField('valid_from',strValid_from);
+                        gen.writeStringField('valid_upto',strValid_upto);
+                        gen.writeStringField('action',reschedule);
+                        gen.writeStringField('fill_checkin_custom_data',fill_checkin_custom_data);
+                        gen.writeStringField('fill_checkout_custom_data',fill_checkout_custom_data);
+                        gen.writeStringField('resend_invite',resend_invite);
+                        gen.writeNumberField('space_id',Integer.valueof(space_id));
+                        gen.writeStringField('site_visit_type',site_visit_type);
+                        gen.writeEndObject();
+                        
+       
+                        
+                        Http httpProtocol = new Http();
+                        HttpRequest request = new HttpRequest();
+                        request.setEndpoint(INVITATION_URL);
+                        request.setMethod('POST');
+                        request.setHeader('Content-Type', 'application/json');
+                        request.setHeader('Accept', 'application/json');
+                        request.setHeader('Authorization', loginDetails.accessToken);
+                        
+                        request.setBody(gen.getAsString());
+                        system.debug('request:' + gen.getAsString());
+                        strRequest = gen.getAsString();
+                        if(!Test.isRunningTest()){
+                            HttpResponse response = httpProtocol.send(request);
+                            System.debug('Response:' + response.getBody());
+                            System.debug('Response:' + response);
+                            strResponse = response.getBody();
+                            
+                        }
+                        
+                        API_Log__c logObj = new API_Log__c();
+                        logObj.API_Name__c = 'Update Invitation';
+                        logObj.Site_Visit__c = SvList[0].id;
+                        logObj.Request__c = strRequest;
+                        logObj.Response__c = strResponse;
+                        logObj.Error_Reason__c = '';
+                        logObj.Status__c =   'Success';  
+                        loglist.add(logObj);
+                        
+                    }
+                    else{
+                        System.debug('Somethning went wrong');
+                    }
+                    
+                }  
+                else{
+                    
+                    API_Log__c logObj = new API_Log__c();
+                    logObj.API_Name__c = 'Update Invitation';
+                    logObj.Site_Visit__c = SvList[0].id;
+                    logObj.Request__c = 'NA';
+                    logObj.Response__c = 'NA';
+                    logObj.Error_Reason__c = 'Invitation Id not present';
+                    logObj.Status__c =   'Not processed';  
+                    loglist.add(logObj);    
+                }      
+                
+            }  
+            
+        }
+        
+        if(loglist != null && loglist.size() > 0)
+            insert loglist; 
+    }
+    
+    /* if Site Visit is Cancelled */
+    @future(callout=true)   
+    public static void cancelSV(Set<ID> SvID){
+        LoginDetails loginDetails = login();
+        List<API_Log__c> loglist = new List<API_Log__c>();
+        
+        List <Customer_Registration__c> SvList = new List <Customer_Registration__c>();
+        SvList = [select id,Name,Opportunity__c,Opportunity__r.name,RecordTypeId,Opportunity__r.Account_Mobile_Number__c,People_Id__c,
+                  Opportunity__r.Account_Email__c,First_Name__c,project__c,project__r.Project_code__c,
+                  VMS_Invitation_Id__c from Customer_Registration__c
+                  where Id IN : SvID];
+        system.debug('svlis::' + SvList );
+        
+        string strResponse = '';
+        string strRequest = '';
+        boolean dataError = false;
+        string errMsg = '';
+        string endpointURL = '';
+        string vmsApiKey = '';
+        
+        
+        if(SvList != null && SvList.size() > 0){
+            
+            VMS_API__c  inviteSetting = VMS_API__c.getInstance('VMS Invitation');
+            system.debug('inviteSetting ::'+inviteSetting );
+            if(String.IsBlank('inviteSetting')){               
+                dataError = true;
+                errMsg += 'Endpoint details is not present'; 
+            }
+            
+            else{
+                endpointURL = inviteSetting.URL__c ;
+                vmsApiKey = inviteSetting.VMS_API_Key__c;                  
+                system.debug('endpointURL ::' + endpointURL );
+                system.debug('vmsApiKey ::' + vmsApiKey );
+                
+            }
+            
+            if(SvList[0].VMS_Invitation_Id__c == null || SvList[0].VMS_Invitation_Id__c == ''){
+                
+                dataError = true;
+                errMsg += 'Invitation Id is not present'; 
+            }
+            else{
+                
+                string strInvitationId =  SvList[0].VMS_Invitation_Id__c;  
+            }
+            
+            
+            if(dataError)
+            {
+                API_Log__c logObj = new API_Log__c();
+                logObj.API_Name__c = 'Cancel Invitation';
+                logObj.Site_Visit__c = SvList[0].id;
+                logObj.Request__c = '';
+                logObj.Response__c = '';
+                logObj.Error_Reason__c =errMsg;
+                logObj.Status__c =   'Not processed';  
+                loglist.add(logObj);
+            }
+            else if(!dataError){
+                string strInvitationId =  SvList[0].VMS_Invitation_Id__c;
+                
+                JSONGenerator gen = JSON.createGenerator(true);
+                gen.writeStartObject();
+                gen.writeNumberField('invitation_id',Integer.valueof(strInvitationId));
+                gen.writeStringField('action','cancel');
+                gen.writeEndObject();
+  
+                Http httpProtocol = new Http();
+                HttpRequest request = new HttpRequest();
+                request.setEndpoint(INVITATION_URL);
+                request.setMethod('POST');
+                request.setHeader('Content-Type', 'application/json');
+                request.setHeader('Accept', 'application/json');
+                request.setHeader('Authorization', loginDetails.accessToken);
+                
+                request.setBody(gen.getAsString());
+                strRequest = gen.getAsString();
+                
+                if(!Test.isRunningTest()){
+                    HttpResponse response = httpProtocol.send(request);
+                    System.debug('Response:' + response.getBody());
+                    System.debug('Response:' + response);
+                    strResponse = response.getBody();
+                }
+                API_Log__c logObj = new API_Log__c();
+                logObj.API_Name__c = 'Cancel Invitation';
+                logObj.Site_Visit__c = SvList[0].id;
+                logObj.Request__c = strRequest;
+                logObj.Response__c = strResponse;
+                logObj.Error_Reason__c = '';
+                logObj.Status__c =   'Success';  
+                loglist.add(logObj);
+                
+                
+            }
+            
+            else{
+                
+                system.debug('Something wet worng');
+            }
+        }  
+        
+        if(loglist != null && loglist.size() > 0)
+            insert loglist;   
+    }
+}
